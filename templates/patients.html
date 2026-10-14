@@ -1,0 +1,14 @@
+{% extends "base.html" %}{% block title %}Patients{% endblock %}{% block content %}
+<div class="page-heading"><div><div class="eyebrow">Patient registry</div><h1>Patients</h1><p class="lead">Register a patient and review every patient's current status and waiting time.</p></div></div>
+<section class="data-panel"><div class="panel-header"><div><h2>Register patient</h2><div class="panel-subtitle">Severity is an operator-entered demonstration category, not a clinical diagnosis.</div></div></div>
+<div class="panel-body"><form method="post" action="{{ url_for('add_patient') }}"><div class="patient-form-grid">
+<div><label for="patient-name">Full name</label><input id="patient-name" name="name" maxlength="100" required placeholder="Patient name"></div>
+<div><label for="patient-phone">Phone number</label><input id="patient-phone" name="phone" type="tel" pattern="[0-9+() -]{7,20}" required placeholder="+91 98765 43210"></div>
+<div><label for="patient-age">Age</label><input id="patient-age" name="age" type="number" min="0" max="120" required></div>
+<div><label for="patient-severity">Severity category</label><select id="patient-severity" name="severity"><option value="1">Critical</option><option value="2">Urgent</option><option value="3" selected>Normal</option></select></div>
+<div class="full"><label for="patient-symptoms">Symptoms / reason for visit</label><textarea id="patient-symptoms" name="symptoms" maxlength="500" required placeholder="Brief reason for visit"></textarea></div></div><div class="form-actions"><button type="submit">＋ Register patient</button></div></form></div></section>
+<section class="data-panel"><div class="panel-header"><div><h2>Patient details and status</h2><div class="panel-subtitle">Waiting time is shown for waiting patients and updates automatically.</div></div><span class="count-pill">{{ patients|length }} RECORDS</span></div>
+<div class="table-wrap"><table><thead><tr><th>ID / Patient</th><th>Contact</th><th>Age</th><th>Severity</th><th>Status</th><th>Waiting time</th><th>Symptoms / reason</th></tr></thead><tbody>
+{% for p in patients %}<tr><td><strong>#{{ p.id }} · {{ p.name }}</strong><div class="patient-meta">Registered {{ p.created_at[:16]|replace('T',' ') }}</div></td><td>{{ p.phone or '—' }}</td><td>{{ p.age }}</td><td><span class="badge {{ colors[p.severity] }}"><span class="badge-dot"></span>{{ labels[p.severity] }}</span></td><td><span class="status-chip {{ p.status }}">{{ p.status|replace('_',' ')|title }}</span></td><td>{% if p.status=='waiting' %}<span class="wait-time" data-created="{{ p.created_at }}">Calculating…</span>{% elif p.status=='in_treatment' %}<span class="status-chip in_treatment">In treatment</span>{% else %}<span class="status-chip treated">Completed</span>{% endif %}</td><td>{{ p.symptoms }}</td></tr>{% else %}<tr><td colspan="7">No patient records yet. Register the first patient above.</td></tr>{% endfor %}
+</tbody></table></div></section>
+{% endblock %}

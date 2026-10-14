@@ -1,0 +1,216 @@
+{% extends "base.html" %}{% block title %}Emergency dashboard
+<script>
+(function(){
+  const arrivals={{ hour_counts|tojson }};
+  const waits={{ wait_by_hour|tojson }};
+  const labels=Array.from({length:24},(_,h)=>h);
+  const ns='http://www.w3.org/2000/svg';
+  const fmt=h=>h===0?'12 AM':h<12?`${h} AM`:h===12?'12 PM':`${h-12} PM`;
+  function el(tag,attrs={},text){
+    const n=document.createElementNS(ns,tag);
+    Object.entries(attrs).forEach(([k,v])=>n.setAttribute(k,v));
+    if(text!==undefined)n.textContent=text;
+    return n;
+  }
+  function drawChart(id,values,kind){
+    const svg=document.getElementById(id); if(!svg)return;
+    svg.replaceChildren();
+    const W=720,H=260,L=42,R=18,T=20,B=36,plotW=W-L-R,plotH=H-T-B;
+    const maxVal=Math.max(5,...values);
+    const top=Math.ceil(maxVal/5)*5;
+    const y=v=>T+plotH-(v/top)*plotH;
+    const x=i=>L+(i/(values.length-1))*plotW;
+    for(let step=0;step<=4;step++){
+      const val=top*step/4, yy=y(val);
+      svg.append(el('line',{x1:L,y1:yy,x2:W-R,y2:yy,class:'chart-grid-line'}));
+      svg.append(el('text',{x:L-10,y:yy+4,'text-anchor':'end',class:'chart-axis-label'},Math.round(val)));
+    }
+    const points=values.map((v,i)=>[x(i),y(v)]);
+    if(kind==='wait'){
+      let line=`M ${points[0][0]} ${points[0][1]}`;
+      for(let i=1;i<points.length;i++){
+        const mx=(points[i-1][0]+points[i][0])/2;
+        const my=(points[i-1][1]+points[i][1])/2;
+        line+=` Q ${points[i-1][0]} ${points[i-1][1]} ${mx} ${my}`;
+      }
+      line+=` T ${points[points.length-1][0]} ${points[points.length-1][1]}`;
+      const area=line+` L ${x(23)} ${T+plotH} L ${x(0)} ${T+plotH} Z`;
+      svg.append(el('path',{d:area,class:'chart-area wait-area'}));
+      svg.append(el('path',{d:line,class:'chart-line wait-line'}));
+      points.forEach((p,i)=>{if(i%2===0)svg.append(el('circle',{cx:p[0],cy:p[1],r:3.5,class:'chart-point wait-point'}));});
+    } else {
+      const barW=Math.max(7,plotW/values.length*.48);
+      values.forEach((v,i)=>{
+        const yy=y(v), height=T+plotH-yy;
+        svg.append(el('rect',{x:x(i)-barW/2,y:yy,width:barW,height:Math.max(0,height),rx:4,class:'arrival-bar'}));
+      });
+      svg.append(el('polyline',{points:points.map(p=>p.join(',')).join(' '),class:'chart-line arrival-line'}));
+      points.forEach((p,i)=>{if(values[i]>0)svg.append(el('circle',{cx:p[0],cy:p[1],r:3,class:'chart-point arrival-point'}));});
+    }
+    labels.forEach(h=>{
+      if(h%3!==0)return;
+      svg.append(el('text',{x:x(h),y:H-10,'text-anchor':'middle',class:'chart-axis-label'},fmt(h)));
+    });
+  }
+  drawChart('arrivals-chart',arrivals,'arrivals');
+  drawChart('wait-chart',waits,'wait');
+})();
+</script>
+
+{% endblock %}{% block content %}
+<div class="page-heading"><div><div class="eyebrow">Operations overview</div><h1>Emergency dashboard</h1><p class="lead">A visual summary of patient flow, urgency, waiting time, and resource utilization.</p></div></div>
+
+<div class="stats">
+  <div class="stat-card"><div class="stat-top"><div class="stat-label">Patients waiting</div><div class="stat-icon">⇄</div></div><div class="stat-number">{{ waiting }}</div><div class="stat-foot">Awaiting initial response</div><div class="mini-viz" aria-label="Waiting count visual indicator"><span style="height:28%"></span><span style="height:42%"></span><span style="height:36%"></span><span style="height:62%"></span><span style="height:54%"></span><span style="height:78%"></span><span style="height:68%"></span></div></div>
+  <div class="stat-card critical"><div class="stat-top"><div class="stat-label">Critical cases</div><div class="stat-icon">!</div></div><div class="stat-number">{{ critical }}</div><div class="stat-foot">Require prompt staff review</div><div class="mini-viz" aria-label="Critical case visual indicator"><span style="height:20%"></span><span style="height:35%"></span><span style="height:28%"></span><span style="height:65%"></span><span style="height:45%"></span><span style="height:80%"></span><span style="height:60%"></span></div></div>
+  <div class="stat-card doctors"><div class="stat-top"><div class="stat-label">Doctors available</div><div class="stat-icon">✚</div></div><div class="stat-number">{{ doctors_available }}</div><div class="stat-foot">Ready for assignment</div><div class="mini-viz" aria-label="Doctor availability visual indicator"><span style="height:70%"></span><span style="height:60%"></span><span style="height:82%"></span><span style="height:50%"></span><span style="height:75%"></span><span style="height:88%"></span><span style="height:66%"></span></div></div>
+  <div class="stat-card"><div class="stat-top"><div class="stat-label">Beds available</div><div class="stat-icon">▱</div></div><div class="stat-number">{{ beds_available }}</div><div class="stat-foot">{{ beds_allocated }} allocated · {{ beds_total }} total beds</div><div class="mini-viz" aria-label="Bed availability visual indicator"><span style="height:78%"></span><span style="height:72%"></span><span style="height:55%"></span><span style="height:64%"></span><span style="height:44%"></span><span style="height:60%"></span><span style="height:52%"></span></div></div>
+  <div class="stat-card"><div class="stat-top"><div class="stat-label">Beds allocated</div><div class="stat-icon">▣</div></div><div class="stat-number">{{ beds_allocated }}</div><div class="stat-foot">Currently assigned to active treatment</div><div class="mini-viz" aria-label="Bed allocation visual indicator"><span style="height:24%"></span><span style="height:32%"></span><span style="height:45%"></span><span style="height:38%"></span><span style="height:58%"></span><span style="height:46%"></span><span style="height:64%"></span></div></div>
+  <div class="stat-card"><div class="stat-top"><div class="stat-label">Average wait</div><div class="stat-icon">◷</div></div><div class="stat-number">{{ avg_wait }}<span style="font-size:13px"> min</span></div><div class="stat-foot">Average time since registration</div><div class="mini-viz" aria-label="Waiting time visual indicator"><span style="height:34%"></span><span style="height:48%"></span><span style="height:42%"></span><span style="height:68%"></span><span style="height:54%"></span><span style="height:72%"></span><span style="height:60%"></span></div></div>
+  <div class="stat-card doctors"><div class="stat-top"><div class="stat-label">Treated today</div><div class="stat-icon">✓</div></div><div class="stat-number">{{ treated_today }}</div><div class="stat-foot">Completed cases today</div><div class="mini-viz" aria-label="Completed treatments visual indicator"><span style="height:24%"></span><span style="height:38%"></span><span style="height:34%"></span><span style="height:55%"></span><span style="height:46%"></span><span style="height:74%"></span><span style="height:62%"></span></div></div>
+</div>
+
+{% if alerts %}<section class="panel"><div class="alerts"><strong>⚠ Active alerts</strong><ul>{% for alert in alerts %}<li>{{ alert }}</li>{% endfor %}</ul></div></section>{% else %}<div class="panel"><div class="panel-body" style="display:flex;align-items:center;gap:12px"><span style="color:var(--green);font-size:22px">✓</span><div><strong>No active waiting-time alerts</strong><div class="panel-subtitle">New alerts appear when waiting thresholds are reached or resources are unavailable.</div></div></div></div>{% endif %}
+
+<section class="panel" id="insights">
+  <div class="panel-header"><div><h2>Dashboard insights</h2><div class="panel-subtitle">Live database summaries of urgency, arrivals, and resource utilization</div></div><span class="count-pill">LIVE DATA</span></div>
+  <div class="panel-body chart-grid">
+    <div>
+      <h3 style="font-size:13px;margin:0 0 12px">Active cases by severity</h3>
+      {% set max_sev = [severity_counts[0],severity_counts[1],severity_counts[2],1]|max %}
+      {% for label,count,color in [('Critical',severity_counts[0],'#c73543'),('Urgent',severity_counts[1],'#d58a1c'),('Normal',severity_counts[2],'#147447')] %}
+      <div class="bar-row"><span>{{ label }}</span><div class="bar-track"><div class="bar-fill" style="width:{{ (count/max_sev*100)|round(1) }}%;background:{{ color }}"></div></div><strong>{{ count }}</strong></div>
+      {% endfor %}
+      <div class="panel-subtitle" style="margin-top:12px">Waiting and in-treatment patients, grouped by operator-entered severity.</div>
+    </div>
+    <div class="chart-card-inner">
+      <div class="chart-title-row"><div><h3>Patient arrivals by hour</h3><p class="panel-subtitle">Registration volume across the 24-hour day</p></div><span class="chart-legend"><i class="legend-dot arrivals-dot"></i> Arrivals</span></div>
+      <div class="svg-chart-wrap"><svg id="arrivals-chart" viewBox="0 0 720 260" role="img" aria-label="Line and area chart of patient arrivals by hour"></svg></div>
+      <div class="chart-note">Hourly registrations from the local database.</div>
+    </div>
+  </div>
+  <div class="panel-body" style="border-top:1px solid var(--line)">
+    <h3 style="font-size:13px;margin:0 0 14px">Resource utilization by class</h3>
+    <div class="resource-usage-grid">
+      <div class="usage-card">
+        <div class="usage-title"><span>Hospital beds</span><strong>{{ beds_allocated }} / {{ beds_total }}</strong></div>
+        <div class="bar-track"><div class="bar-fill" style="width:{{ (beds_allocated / (beds_total if beds_total else 1) * 100)|round(1) }}%;background:#315efb"></div></div>
+        <div class="usage-meta"><span>{{ beds_available }} available</span><span>{{ beds_allocated }} allocated</span></div>
+      </div>
+      {% for resource in resource_stats %}
+      <div class="usage-card">
+        <div class="usage-title"><span>{{ resource.name }}</span><strong>{{ resource.assigned_quantity }} / {{ resource.quantity }}</strong></div>
+        <div class="bar-track"><div class="bar-fill" style="width:{{ (resource.assigned_quantity / (resource.quantity if resource.quantity else 1) * 100)|round(1) }}%;background:#0f8a62"></div></div>
+        <div class="usage-meta"><span>{{ resource.available_quantity }} available</span><span>{{ resource.assigned_quantity }} allocated</span></div>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="panel-subtitle" style="margin-top:12px">Counts are based on active assignments. Resource inventory is managed on Beds &amp; Resources.</div>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-header"><div><h2>Current resource allocations</h2><div class="panel-subtitle">Which beds, doctors and equipment are assigned to active patients</div></div><a class="button button-soft button-small" href="{{ url_for('resources') }}">Manage inventory</a></div>
+  {% if active_allocations %}
+  <div class="table-wrap"><table><thead><tr><th>Patient</th><th>Severity</th><th>Doctor</th><th>Bed</th><th>Equipment assigned</th></tr></thead><tbody>
+  {% for group in active_allocations|groupby('patient_id') %}
+    {% set rows = group.list %}
+    {% set first = rows[0] %}
+    <tr>
+      <td><strong>{{ first.patient_name }}</strong><div class="muted">Patient #{{ first.patient_id }}</div></td>
+      <td><span class="severity {{ colors[first.severity] }}">{{ labels[first.severity] }}</span></td>
+      <td>{{ first.doctor_name or '—' }}</td>
+      <td>{{ first.bed_name or '—' }}</td>
+      <td>{% set equipment = [] %}{% for row in rows %}{% if row.resource_name %}{% if equipment.append(row.resource_name ~ ' ×' ~ row.resource_quantity) %}{% endif %}{% endif %}{% endfor %}{{ equipment|join(', ') if equipment else 'No additional equipment assigned' }}</td>
+    </tr>
+  {% endfor %}
+  </tbody></table></div>
+  {% else %}
+  <div class="panel-body empty-state"><strong>No active resource allocations</strong><div class="panel-subtitle">Beds and equipment assigned when treatment starts will appear here.</div></div>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-header"><div><h2>Inventory at a glance</h2><div class="panel-subtitle">Available versus allocated units for each resource class</div></div></div>
+  <div class="panel-body"><div class="inventory-table-wrap"><table><thead><tr><th>Resource class</th><th>Total</th><th>Allocated / in use</th><th>Available</th><th>Utilization</th></tr></thead><tbody>
+    <tr><td><strong>Hospital beds</strong></td><td>{{ beds_total }}</td><td>{{ beds_allocated }}</td><td>{{ beds_available }}</td><td><div class="mini-track"><div style="width:{{ (beds_allocated / (beds_total if beds_total else 1) * 100)|round(1) }}%"></div></div></td></tr>
+    {% for resource in resource_stats %}
+    <tr><td><strong>{{ resource.name }}</strong></td><td>{{ resource.quantity }}</td><td>{{ resource.assigned_quantity }}</td><td>{{ resource.available_quantity }}</td><td><div class="mini-track"><div style="width:{{ (resource.assigned_quantity / (resource.quantity if resource.quantity else 1) * 100)|round(1) }}%"></div></div></td></tr>
+    {% endfor %}
+  </tbody></table></div></div>
+</section>
+
+<section class="panel chart-panel" id="wait-trend">
+  <div class="panel-header"><div><h2>Average wait time trend</h2><div class="panel-subtitle">Average registration-to-treatment time grouped by registration hour</div></div><span class="count-pill">MINUTES</span></div>
+  <div class="panel-body">
+    <div class="chart-title-row"><div><h3>Wait time throughout the day</h3><p class="panel-subtitle">Computed from recorded patient timestamps</p></div><span class="chart-legend"><i class="legend-dot wait-dot"></i> Average wait</span></div>
+    <div class="svg-chart-wrap"><svg id="wait-chart" viewBox="0 0 720 260" role="img" aria-label="Smooth area line chart showing average wait time by registration hour"></svg></div>
+    <div class="chart-note">Patients still waiting contribute their elapsed time; patients who have started treatment contribute their recorded time to treatment start. Empty hours display zero.</div>
+  </div>
+</section>
+
+<div class="resource-summary-grid">
+  <div class="stat-card"><div class="stat-label">Patient records</div><div class="stat-number" style="font-size:20px">{{ waiting + in_treatment + treated }}</div><div class="stat-foot">Waiting, in-treatment and completed cases</div><a class="button button-soft button-small" style="margin-top:12px" href="{{ url_for('patients_page') }}">View patients</a></div>
+  <div class="stat-card"><div class="stat-label">Queue ordering</div><div class="stat-number" style="font-size:20px">Priority-based</div><div class="stat-foot">Critical → Urgent → Normal; arrival order breaks ties</div><a class="button button-soft button-small" style="margin-top:12px" href="{{ url_for('queue_management') }}">Open queue</a></div>
+  <div class="stat-card"><div class="stat-label">Equipment categories</div><div class="stat-number" style="font-size:20px">{{ resource_stats|length }}</div><div class="stat-foot">Additional resources tracked separately from beds</div><a class="button button-soft button-small" style="margin-top:12px" href="{{ url_for('resources') }}">View resources</a></div>
+</div>
+
+<script>
+(function(){
+  const arrivals={{ hour_counts|tojson }};
+  const waits={{ wait_by_hour|tojson }};
+  const labels=Array.from({length:24},(_,h)=>h);
+  const ns='http://www.w3.org/2000/svg';
+  const fmt=h=>h===0?'12 AM':h<12?`${h} AM`:h===12?'12 PM':`${h-12} PM`;
+  function el(tag,attrs={},text){
+    const n=document.createElementNS(ns,tag);
+    Object.entries(attrs).forEach(([k,v])=>n.setAttribute(k,v));
+    if(text!==undefined)n.textContent=text;
+    return n;
+  }
+  function drawChart(id,values,kind){
+    const svg=document.getElementById(id); if(!svg)return;
+    svg.replaceChildren();
+    const W=720,H=260,L=42,R=18,T=20,B=36,plotW=W-L-R,plotH=H-T-B;
+    const maxVal=Math.max(5,...values);
+    const top=Math.ceil(maxVal/5)*5;
+    const y=v=>T+plotH-(v/top)*plotH;
+    const x=i=>L+(i/(values.length-1))*plotW;
+    for(let step=0;step<=4;step++){
+      const val=top*step/4, yy=y(val);
+      svg.append(el('line',{x1:L,y1:yy,x2:W-R,y2:yy,class:'chart-grid-line'}));
+      svg.append(el('text',{x:L-10,y:yy+4,'text-anchor':'end',class:'chart-axis-label'},Math.round(val)));
+    }
+    const points=values.map((v,i)=>[x(i),y(v)]);
+    if(kind==='wait'){
+      let line=`M ${points[0][0]} ${points[0][1]}`;
+      for(let i=1;i<points.length;i++){
+        const mx=(points[i-1][0]+points[i][0])/2;
+        const my=(points[i-1][1]+points[i][1])/2;
+        line+=` Q ${points[i-1][0]} ${points[i-1][1]} ${mx} ${my}`;
+      }
+      line+=` T ${points[points.length-1][0]} ${points[points.length-1][1]}`;
+      const area=line+` L ${x(23)} ${T+plotH} L ${x(0)} ${T+plotH} Z`;
+      svg.append(el('path',{d:area,class:'chart-area wait-area'}));
+      svg.append(el('path',{d:line,class:'chart-line wait-line'}));
+      points.forEach((p,i)=>{if(i%2===0)svg.append(el('circle',{cx:p[0],cy:p[1],r:3.5,class:'chart-point wait-point'}));});
+    } else {
+      const barW=Math.max(7,plotW/values.length*.48);
+      values.forEach((v,i)=>{
+        const yy=y(v), height=T+plotH-yy;
+        svg.append(el('rect',{x:x(i)-barW/2,y:yy,width:barW,height:Math.max(0,height),rx:4,class:'arrival-bar'}));
+      });
+      svg.append(el('polyline',{points:points.map(p=>p.join(',')).join(' '),class:'chart-line arrival-line'}));
+      points.forEach((p,i)=>{if(values[i]>0)svg.append(el('circle',{cx:p[0],cy:p[1],r:3,class:'chart-point arrival-point'}));});
+    }
+    labels.forEach(h=>{
+      if(h%3!==0)return;
+      svg.append(el('text',{x:x(h),y:H-10,'text-anchor':'middle',class:'chart-axis-label'},fmt(h)));
+    });
+  }
+  drawChart('arrivals-chart',arrivals,'arrivals');
+  drawChart('wait-chart',waits,'wait');
+})();
+</script>
+
+{% endblock %}

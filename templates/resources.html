@@ -1,0 +1,96 @@
+{% extends "base.html" %}{% block title %}Beds & Resources{% endblock %}{% block content %}
+<div class="page-heading"><div><div class="eyebrow">Facility resource centre</div><h1>Bed Management</h1><p class="lead">Manage hospital bed allocation, availability, and additional patient-care equipment.</p></div><div class="heading-actions"><a class="button button-primary" href="#add-bed">＋ Add Bed</a></div></div>
+
+<section class="panel bed-filter-panel">
+  <div class="panel-header" style="padding:0 0 14px;border:0"><div><h2>Search &amp; Filter Beds</h2><div class="panel-subtitle">Search identifiers or patient assignments and filter by status.</div></div></div>
+  <div class="bed-filter-row">
+    <div><label for="bed-search">Search beds or patients</label><input id="bed-search" type="search" placeholder="Search beds, status, patient..." autocomplete="off"></div>
+    <div><label for="bed-status-filter">Status</label><select id="bed-status-filter"><option value="all">All statuses</option><option value="available">Available</option><option value="occupied">Occupied</option><option value="reserved">Reserved</option><option value="cleaning">Cleaning</option></select></div>
+    <div><label for="bed-view-filter">Bed view</label><select id="bed-view-filter"><option value="all">All beds</option><option value="assigned">Assigned to patient</option><option value="unassigned">No active patient</option></select></div>
+    <button class="button button-soft" type="button" id="clear-bed-filters">Reset filters</button>
+  </div>
+</section>
+
+{% set bed_total = beds|length %}
+{% set bed_available = beds|selectattr('status','equalto','available')|list|length %}
+{% set bed_occupied = beds|selectattr('status','equalto','occupied')|list|length %}
+{% set bed_reserved = beds|selectattr('status','equalto','reserved')|list|length %}
+{% set bed_maintenance = beds|selectattr('status','equalto','cleaning')|list|length %}
+<div class="bed-kpis">
+  <div class="bed-kpi blue"><strong>{{ bed_total }}</strong><span>Total beds</span></div>
+  <div class="bed-kpi green"><strong>{{ bed_available }}</strong><span>Available</span></div>
+  <div class="bed-kpi blue"><strong>{{ bed_occupied }}</strong><span>Occupied</span></div>
+  <div class="bed-kpi amber"><strong>{{ bed_reserved }}</strong><span>Reserved</span></div>
+  <div class="bed-kpi red"><strong>{{ bed_maintenance }}</strong><span>Cleaning / maintenance</span></div>
+</div>
+
+<section class="panel" id="add-bed">
+  <div class="panel-header"><div><h2>Add a hospital bed</h2><div class="panel-subtitle">Register a new bed identifier. New beds start as Available.</div></div><span class="count-pill">{{ bed_total }} TOTAL</span></div>
+  <div class="panel-body">
+    <form method="post" action="{{ url_for('add_bed') }}" class="bed-filter-row" style="grid-template-columns:minmax(240px,1fr) auto;align-items:end">
+      <div><label for="bed-name">Bed name / identifier</label><input id="bed-name" name="bed_name" maxlength="60" placeholder="e.g. ICU-01, Ward-A-04, Bed E" required></div>
+      <button type="submit">＋ Add Bed</button>
+    </form>
+  </div>
+</section>
+
+<section class="data-panel">
+  <div class="panel-header"><div><h2>Bed inventory</h2><div class="panel-subtitle">Each card shows current status and the patient linked to the bed, if any.</div></div><span class="count-pill" id="bed-visible-count">{{ bed_total }} BEDS</span></div>
+  <div class="panel-body"><div class="bed-card-grid" id="bed-card-grid">
+  {% for b in beds %}
+    <article class="bed-card" data-bed-card data-search="{{ (b.bed_name ~ ' ' ~ (b.patient_name or '') ~ ' ' ~ b.status)|lower }}" data-status="{{ b.status }}" data-assigned="{{ 'yes' if b.patient_id else 'no' }}">
+      <div class="bed-card-top"><div class="bed-card-title"><div class="bed-icon">▱</div><div><h3>{{ b.bed_name }}</h3><div class="bed-type">Hospital bed · General ward</div></div></div>
+      <span class="resource-status {{ 'available' if b.status=='available' else ('busy' if b.status=='occupied' else 'neutral') }}">{{ b.status|replace('_',' ')|title }}</span></div>
+      <div class="bed-card-meta">
+        <div>⌖ &nbsp;Location <strong>Hospital ward</strong></div>
+        <div>♙ &nbsp;Patient {% if b.patient_name %}<strong>{{ b.patient_name }}</strong> <span class="muted">(#{{ b.patient_id }})</span>{% else %}<span class="muted">No active patient</span>{% endif %}</div>
+        <div>▦ &nbsp;Allocation <strong>{{ 'Currently assigned' if b.patient_id else ('Ready for assignment' if b.status=='available' else 'Not assignable now') }}</strong></div>
+      </div>
+      <form class="bed-status-form" method="post" action="{{ url_for('update_bed',bed_id=b.id) }}">
+        <label for="bed-status-{{ b.id }}" style="margin:0;white-space:nowrap">Status</label>
+        <select id="bed-status-{{ b.id }}" name="status">
+          {% for status in ['available','occupied','cleaning','reserved'] %}<option value="{{ status }}" {% if b.status==status %}selected{% endif %}>{{ status|replace('_',' ')|title }}</option>{% endfor %}
+        </select><button class="button-soft" type="submit">Update</button>
+      </form>
+      <div class="bed-card-actions">
+        {% if b.patient_id %}<a class="button button-soft button-small" href="{{ url_for('history') }}">View treatment</a>{% else %}<span class="button button-soft button-small" style="opacity:.65;cursor:default">No patient assigned</span>{% endif %}
+        <form method="post" action="{{ url_for('delete_bed',bed_id=b.id) }}" onsubmit="return confirm('Remove {{ b.bed_name }}?')"><button class="button-danger button-small" type="submit">Remove bed</button></form>
+      </div>
+    </article>
+  {% else %}<div class="empty-state">No beds registered yet. Add your first bed above.</div>{% endfor %}
+  </div><div class="empty-state" id="bed-filter-empty" hidden>No beds match these filters.</div></div>
+</section>
+
+<section class="data-panel">
+  <div class="panel-header"><div><h2>Additional patient-care resources</h2><div class="panel-subtitle">Inventory and allocation by equipment category, including the remaining available quantity.</div></div><span class="count-pill">{{ resources|length }} CATEGORIES</span></div>
+  <div class="inventory-grid">
+  {% for r in resources %}
+    <article class="inventory-card">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:start"><div><h3>{{ r.name }}</h3><p>{{ r.description }}</p><p><strong>{{ r.available_quantity }}</strong> available · {{ r.assigned_quantity }} in use of {{ r.quantity }} total</p></div><span class="resource-status {{ 'available' if r.status=='available' else ('busy' if r.status=='in_use' else 'neutral') }}">{{ r.status|replace('_',' ')|title }}</span></div>
+      <div class="resource-progress"><span style="width:{{ (r.assigned_quantity/(r.quantity if r.quantity else 1)*100)|round(1) }}%"></span></div>
+      <div class="inventory-foot"><span>{{ r.available_quantity }} available</span><span>{{ r.assigned_quantity }} allocated</span></div>
+      <form class="inventory-form" method="post" action="{{ url_for('update_general_resource',resource_id=r.id) }}"><div><label for="quantity-{{ r.id }}">Total quantity</label><input id="quantity-{{ r.id }}" type="number" min="{{ r.assigned_quantity }}" max="10000" name="quantity" value="{{ r.quantity }}" required></div><div><label for="resource-status-{{ r.id }}">Inventory status</label><select id="resource-status-{{ r.id }}" name="status">{% for status in resource_statuses %}<option value="{{ status }}" {% if r.status==status %}selected{% endif %}>{{ status|replace('_',' ')|title }}</option>{% endfor %}</select></div><button class="button-soft" type="submit">Save inventory</button></form>
+    </article>
+  {% endfor %}
+  </div>
+</section>
+<script>
+(function(){
+ const search=document.getElementById('bed-search'), status=document.getElementById('bed-status-filter'), view=document.getElementById('bed-view-filter');
+ const cards=[...document.querySelectorAll('[data-bed-card]')], count=document.getElementById('bed-visible-count'), empty=document.getElementById('bed-filter-empty');
+ function apply(){
+   const q=(search.value||'').trim().toLowerCase(); let visible=0;
+   cards.forEach(card=>{
+     const matchText=card.dataset.search.includes(q);
+     const matchStatus=status.value==='all'||card.dataset.status===status.value;
+     const matchView=view.value==='all'||(view.value==='assigned'?card.dataset.assigned==='yes':card.dataset.assigned==='no');
+     const show=matchText&&matchStatus&&matchView;card.hidden=!show;if(show)visible++;
+   });
+   count.textContent=visible+' BEDS';empty.hidden=visible>0;
+ }
+ [search,status,view].forEach(el=>el.addEventListener(el===search?'input':'change',apply));
+ document.getElementById('clear-bed-filters').addEventListener('click',()=>{search.value='';status.value='all';view.value='all';apply()});
+ apply();
+})();
+</script>
+{% endblock %}
